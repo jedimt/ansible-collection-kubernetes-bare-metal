@@ -1,0 +1,27 @@
+# This file specifies the roles and collections required by this
+# playbook to function correctly.
+
+# Will have to figure out how to deal with roles once I refactor all the 
+# playbooks to use roles for library-like functions.
+# https://docs.ansible.com/ansible/latest/galaxy/user-guide.html#installing-multiple-roles-from-a-file
+roles:
+- name: jedimt.golang_install
+- name: jedimt.apt_disable_background_tasks
+- name: jedimt.kubernetes_kube_prometheus
+- name: jedimt.kubernetes_create_cluster
+- name: jedimt.kubernetes_join_nodes
+- name: jedimt.kubernetes_metallb
+- name: jedimt.kubernetes_prep
+- name: jedimt.nebulon_create_npod
+- name: jedimt.nebulon_csi_install
+- name: jedimt.ssh_update_known_hosts
+
+collections:
+- name: ansible.posix
+  version: 1.3.0
+- name: ansible.utils
+  version: 2.5.0
+- name: community.general
+  version: 5.4.0
+- name: nebulon.nebulon_on
+  version: 1.2.1

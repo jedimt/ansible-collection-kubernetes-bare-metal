@@ -1,0 +1,122 @@
+---
+# This playbook creates a bare metal Kubernetes cluster with the following characteristics:
+# - Single master node
+# - 2 or 3 worker nodes (depending on the environment)
+# - Installs the Nebulon CSI driver for PVCs
+# - Installs the kube-prometheus project for monitoring (optional)
+
+# Example invocation:
+# ansible-playbook -i inventory/lenovo.yml kubernetes_bare_metal.yml
+
+- name: Create nPod
+  hosts: localhost
+  connection: local
+  module_defaults:
+    group/nebulon.nebulon_on.nebulon:
+      neb_username: "{{ neb_username }}"
+      neb_password: "{{ neb_password }}"
+
+  collections:
+    - nebulon.nebulon_on
+
+  vars_files:
+    - credentials.yml
+
+  vars:
+    # `playbook_application` is concatenated with the `equipment` variable
+    # from the inventory file to name the nPod
+    - playbook_application: "bare_metal_kubernetes"
+
+  roles:
+    - role: jedimt.nebulon_create_npod
+
+# Wait for hosts to boot up
+- name: Wait for hosts to reboot
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Wait {{ wait_hosts }} minutes for hosts to come up
+      pause:
+        minutes: "{{ wait_hosts }}"
+      when: hostvars['localhost']['reboot_required']
+  tags: 
+    - wait_boot
+    - k8s_prep
+
+# Populate the authorized_keys file using the vault_pubkey variable.
+# Required when the ansible host is run from some dynamic location, like AWX
+- name: Copy SSH public key to authorized_keys on remote host(s)
+  hosts: servers
+  gather_facts: false
+
+  vars_files:
+    - credentials.yml
+
+  tasks:
+    # This copies the contents of `vault_pubkey` to the authorized_keys file
+    # on the remote host to enable passwordless SSH access. To avoid having to
+    # input the --ask-pass command line argument when running the playbook
+    # populate the credentials.yml file with a variable called
+    # `ansible_password` with the password for the user being used for the
+    # SSH session.
+    - name: Copy public key to remote authorized_keys file
+      ansible.posix.authorized_key:
+        user: root
+        key: "{{ vault_pubkey }}"
+        state: present
+
+
+- name: Update known_hosts files for servers
+  hosts: localhost
+  connection: local
+
+  roles:
+    - role: jedimt.ssh_update_known_hosts
+      tags: role_ssh
+
+- name: Set up hosts for Kubernetes
+  hosts: servers
+  # gather_facts required by the kubernetes_prep role
+  gather_facts: true
+
+  vars_files:
+    - credentials.yml
+
+  roles:
+    - role: jedimt.apt_disable_background_tasks
+      tags: role_apt
+    - role: jedimt.kubernetes_prep
+      tags: role_k8s_prep
+
+- name: Create Kubernetes Cluster
+  hosts: k8s_master
+  gather_facts: false
+
+  roles:
+    - role: jedimt.kubernetes_create_cluster
+      tags: role_k8s_create_cluster
+
+- name: Join nodes to Kubernetes Cluster
+  hosts: k8s_nodes
+  gather_facts: false
+
+  roles:
+    - role: jedimt.kubernetes_join_nodes
+      tags: role_k8s_join_nodes
+
+- name: Finish Kubernetes cluster configuration
+  hosts: k8s_master
+  gather_facts: false
+
+  vars_files:
+    - credentials.yml
+
+  roles:
+    - role: jedimt.kubernetes_metallb
+      tags: role_k8s_metallb
+    - role: jedimt.nebulon_csi_install
+      tags: role_csi_install
+    - role: jedimt.golang_install
+      tags: role_golang
+    - role: jedimt.kubernetes_kube_prometheus
+      tags: role_kube_prometheus
