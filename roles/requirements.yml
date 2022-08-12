@@ -24,4 +24,4 @@ collections:
 - name: community.general
   version: 5.4.0
 - name: nebulon.nebulon_on
-  version: 1.2.1
+  version: 1.2.2
